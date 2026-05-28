@@ -274,59 +274,59 @@ def retry_with_backoff(
     max_retries: int = 3,
     base_delay: float = 0.1,
 ) -> Any:
-    """
-    Call fn(). If it raises an exception, retry up to max_retries times
-    with exponential backoff (delay = base_delay * 2^attempt).
-
-    Args:
-        fn:          Zero-argument callable to execute.
-        max_retries: Maximum number of retry attempts.
-        base_delay:  Initial delay in seconds before the first retry.
-
-    Returns:
-        The return value of fn() on success.
-
-    Raises:
-        The last exception raised by fn() after all retries are exhausted.
-    """
-    # TODO: implement retry loop with exponential backoff
-    raise NotImplementedError("Implement retry_with_backoff")
+    attempt = 0
+    while True:
+        try:
+            return fn()
+        except Exception:
+            if attempt >= max_retries:
+                raise
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
+            attempt += 1
 
 
 # ---------------------------------------------------------------------------
 # Bonus Task B — Batch compare
 # ---------------------------------------------------------------------------
 def batch_compare(prompts: list[str]) -> list[dict]:
-    """
-    Run compare_models on each prompt in the list.
-
-    Args:
-        prompts: List of prompt strings.
-
-    Returns:
-        List of dicts, each being the compare_models result with an extra
-        key "prompt" containing the original prompt string.
-    """
-    # TODO: iterate over prompts, call compare_models, and inject the original "prompt".
-    raise NotImplementedError("Implement batch_compare")
+    results: list[dict] = []
+    for prompt in prompts:
+        result = compare_models(prompt)
+        result["prompt"] = prompt
+        results.append(result)
+    return results
 
 
 # ---------------------------------------------------------------------------
 # Bonus Task C — Format comparison table
 # ---------------------------------------------------------------------------
 def format_comparison_table(results: list[dict]) -> str:
-    """
-    Format a list of batch compare results as a readable Markdown table string.
+    lines = [
+        "| Prompt | Model | Response (truncated) | Latency | Tokens (In/Out) | Cost (USD) |",
+        "|---|---|---|---|---|---|",
+    ]
 
-    Args:
-        results: List of dicts as returned by batch_compare.
+    def _truncate(text: str, limit: int = 50) -> str:
+        return text if len(text) <= limit else text[:limit - 3] + "..."
 
-    Returns:
-        A beautiful Markdown table string with columns:
-        | Prompt | Model | Response (truncated) | Latency | Tokens (In/Out) | Cost (USD) |
-    """
-    # TODO: Build and return the formatted table string. Truncate response to 50 chars for clean display.
-    raise NotImplementedError("Implement format_comparison_table")
+    for item in results:
+        prompt = item["prompt"]
+        rows = [
+            ("GPT-4o", item["gpt4o"]),
+            ("GPT-4o-Mini", item["gpt4o_mini"]),
+            ("Gemini-Flash", item["gemini_flash"]),
+        ]
+        for model_name, stats in rows:
+            response = _truncate(stats["response"])
+            latency = f"{stats['latency']:.2f}s"
+            tokens = f"{stats['input_tokens']}/{stats['output_tokens']}"
+            cost = f"${stats['cost']:.6f}"
+            lines.append(
+                f"| {prompt} | {model_name} | {response} | {latency} | {tokens} | {cost} |"
+            )
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
