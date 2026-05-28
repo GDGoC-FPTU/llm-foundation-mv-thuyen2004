@@ -36,6 +36,7 @@ ANTHROPIC_MODEL = "claude-3-5-haiku"
 # ---------------------------------------------------------------------------
 # Task 1 — Call OpenAI (GPT-4o)
 # ---------------------------------------------------------------------------
+from openai import OpenAI
 def call_openai(
     prompt: str,
     model: str = OPENAI_MODEL,
@@ -43,36 +44,32 @@ def call_openai(
     top_p: float = 0.9,
     max_tokens: int = 256,
 ) -> tuple[str, float, dict]:
-    """
-    Call the OpenAI Chat Completions API and return the response text, latency,
-    and token usage stats.
+    
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    Args:
-        prompt:      The user message to send.
-        model:       The OpenAI model to use (default: gpt-4o).
-        temperature: Sampling temperature (0.0 – 2.0).
-        top_p:       Nucleus sampling threshold.
-        max_tokens:  Maximum number of tokens to generate.
+    start = time.time()
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+    latency = time.time() - start
 
-    Returns:
-        A tuple of:
-            - response_text (str)
-            - latency_seconds (float)
-            - usage (dict with keys: 'input_tokens', 'output_tokens')
-
-    Hint:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        # response.usage contains input_tokens and output_tokens (prompt_tokens/completion_tokens)
-    """
-    # TODO: Import OpenAI, instantiate client, call chat.completions.create with parameters,
-    #       measure execution start/end time, extract text and token usage, and return them.
-    raise NotImplementedError("Implement call_openai")
+    response_text = response.choices[0].message.content
+    usage = {
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens,
+    }
+    return response_text, latency, usage
 
 
 # ---------------------------------------------------------------------------
 # Task 2 — Call Google Gemini 2.5 (Standard Practical Model)
 # ---------------------------------------------------------------------------
+from google import genai
+from google.genai import types
 def call_gemini(
     prompt: str,
     model: str = GEMINI_MODEL,
@@ -80,47 +77,35 @@ def call_gemini(
     top_p: float = 0.9,
     max_tokens: int = 256,
 ) -> tuple[str, float, dict]:
-    """
-    Call the Google Gemini API (using Gemini 2.5 Flash as standard) and return
-    the response text, latency, and token usage stats.
+    
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-    Args:
-        prompt:      The user message to send.
-        model:       The Gemini model to use (default: gemini-2.5-flash).
-        temperature: Sampling temperature.
-        top_p:       Nucleus sampling threshold.
-        max_tokens:  Maximum number of tokens to generate.
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_tokens,
+    )
 
-    Returns:
-        A tuple of:
-            - response_text (str)
-            - latency_seconds (float)
-            - usage (dict with keys: 'input_tokens', 'output_tokens')
+    start = time.time()
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=config,
+    )
+    latency = time.time() - start
 
-    Hint:
-        Option A (New Google GenAI SDK):
-            from google import genai
-            from google.genai import types
-            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-            # Configure using types.GenerateContentConfig
-            
-        Option B (Legacy Google GenerativeAI SDK):
-            import google.generativeai as genai
-            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            model_inst = genai.GenerativeModel(model)
-            # Configure using genai.types.GenerationConfig
-            
-        Ensure your usage dictionary extracts 'input_tokens' and 'output_tokens' 
-        from the response metadata (e.g. response.usage_metadata).
-    """
-    # TODO: Initialize Gemini client, set config parameters, call generate_content,
-    #       measure latency, extract response text and usage metadata, and return the tuple.
-    raise NotImplementedError("Implement call_gemini")
+    response_text = response.text
+    usage = {
+        "input_tokens": response.usage_metadata.prompt_token_count,
+        "output_tokens": response.usage_metadata.candidates_token_count,
+    }
+    return response_text, latency, usage
 
 
 # ---------------------------------------------------------------------------
 # Task 3 — Call Anthropic Claude (Exploratory track)
 # ---------------------------------------------------------------------------
+import anthropic
 def call_anthropic(
     prompt: str,
     model: str = ANTHROPIC_MODEL,
@@ -152,7 +137,24 @@ def call_anthropic(
     """
     # TODO: Initialize Anthropic client, create message, measure latency,
     #       extract content text and usage statistics, and return the tuple.
-    raise NotImplementedError("Implement call_anthropic")
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    start = time.time()
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    latency = time.time() - start
+
+    response_text = response.content[0].text
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+    return response_text, latency, usage
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +182,42 @@ def compare_models(prompt: str) -> dict:
     # TODO: Calculate costs exactly based on input and output token counts using PRICING_1M_TOKENS
     #       Formula: Cost = (input_tokens * input_rate_per_1M + output_tokens * output_rate_per_1M) / 1,000,000
     # TODO: Assemble and return the comparison dictionary.
-    raise NotImplementedError("Implement compare_models")
+
+
+    gpt4o_text, gpt4o_latency, gpt4o_usage = call_openai(prompt, model=OPENAI_MODEL)
+    gpt4o_mini_text, gpt4o_mini_latency, gpt4o_mini_usage = call_openai(prompt, model=OPENAI_MINI_MODEL)
+    gemini_text, gemini_latency, gemini_usage = call_gemini(prompt, model=GEMINI_MODEL)
+
+    def _calc_cost(model_key: str, usage: dict) -> float:
+        rates = PRICING_1M_TOKENS[model_key]
+        return (
+            usage["input_tokens"] * rates["input"]
+            + usage["output_tokens"] * rates["output"]
+        ) / 1_000_000
+    return {
+        "gpt4o": {
+            "response": gpt4o_text,
+            "latency": gpt4o_latency,
+            "cost": _calc_cost(OPENAI_MODEL, gpt4o_usage),
+            "input_tokens": gpt4o_usage["input_tokens"],
+            "output_tokens": gpt4o_usage["output_tokens"],
+        },
+        "gpt4o_mini": {
+            "response": gpt4o_mini_text,
+            "latency": gpt4o_mini_latency,
+            "cost": _calc_cost(OPENAI_MINI_MODEL, gpt4o_mini_usage),
+            "input_tokens": gpt4o_mini_usage["input_tokens"],
+            "output_tokens": gpt4o_mini_usage["output_tokens"],
+        },
+        "gemini_flash": {
+            "response": gemini_text,
+            "latency": gemini_latency,
+            "cost": _calc_cost(GEMINI_MODEL, gemini_usage),
+            "input_tokens": gemini_usage["input_tokens"],
+            "output_tokens": gemini_usage["output_tokens"],
+        },
+    }
+    
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +238,32 @@ def streaming_chatbot() -> None:
         - Keep history limited to the last 3 turns to optimize context window and costs.
     """
     # TODO: Setup interactive session, prompt user for input, stream response, and update history.
-    raise NotImplementedError("Implement streaming_chatbot")
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    history: list[dict] = []
+
+    while True:
+        user_text = input("You: ").strip()
+        if user_text.lower() in {"quit", "exit"}:
+            break
+
+        history.append({"role": "user", "content": user_text})
+        history = history[-6:]  # keep last 3 turns
+
+        print("Bot: ", end="", flush=True)
+        response_stream = client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=history,
+        )
+        assistant_text_parts = []
+        for chunk in response_stream:
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                assistant_text_parts.append(chunk.text)
+        print()
+
+        history.append({"role": "assistant", "content": "".join(assistant_text_parts)})
+        history = history[-6:]
+    
 
 
 # ---------------------------------------------------------------------------
